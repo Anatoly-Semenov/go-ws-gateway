@@ -1,7 +1,9 @@
 package commands
 
 import (
+	"context"
 	"fmt"
+	"time"
 
 	"github.com/anatoly-dev/go-ws-gateway/internal/service"
 	"github.com/anatoly-dev/go-ws-gateway/pkg/config"
@@ -123,12 +125,32 @@ func (a *Application) Run() error {
 }
 
 func (a *Application) Stop() {
-	if a.redisManager != nil {
-		a.redisManager.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	a.logger.Info("Stopping application")
+
+	if a.server != nil {
+		if err := a.server.Shutdown(ctx); err != nil {
+			a.logger.Error("Error shutting down server", zap.Error(err))
+		}
 	}
+
+	if a.kafkaConsumer != nil {
+		a.kafkaConsumer.Stop()
+	}
+
+	if a.redisManager != nil {
+		if err := a.redisManager.Close(); err != nil {
+			a.logger.Error("Error closing Redis connection", zap.Error(err))
+		}
+	}
+
 	if a.logger != nil {
 		a.logger.Sync()
 	}
+
+	a.logger.Info("Application stopped")
 }
 
 func NewServeCommand() *cobra.Command {

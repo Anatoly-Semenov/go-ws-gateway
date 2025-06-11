@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 
@@ -30,6 +31,11 @@ func (h *WebSocketHandler) HandleConnection(w http.ResponseWriter, r *http.Reque
 
 	h.logger.Info("WebSocket connection request", zap.String("userID", userID))
 	h.wsManager.HandleConnection(w, r, userID)
+}
+
+func (h *WebSocketHandler) CloseConnections(ctx context.Context) error {
+	h.logger.Info("Closing all WebSocket connections")
+	return h.wsManager.Close(ctx)
 }
 
 type HealthCheckHandler struct {

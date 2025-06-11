@@ -214,10 +214,32 @@ func (m *ConnectionManager) PublishToUser(ctx context.Context, userID string, me
 }
 
 func (m *ConnectionManager) Close() error {
-	if err := m.pubsub.Close(); err != nil {
-		return err
+	_, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	m.logger.Info("Closing Redis connection manager")
+
+	var pubsubErr, clientErr error
+	
+	if m.pubsub != nil {
+		pubsubErr = m.pubsub.Close()
+		if pubsubErr != nil {
+			m.logger.Error("Error closing Redis pubsub", zap.Error(pubsubErr))
+		}
 	}
-	return m.client.Close()
+
+	if m.client != nil {
+		clientErr = m.client.Close()
+		if clientErr != nil {
+			m.logger.Error("Error closing Redis client", zap.Error(clientErr))
+		}
+	}
+
+	if pubsubErr != nil {
+		return pubsubErr
+	}
+
+	return clientErr
 }
 
 func (m *ConnectionManager) subscribe() {

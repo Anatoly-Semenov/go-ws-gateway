@@ -175,6 +175,24 @@ func (m *Manager) GetClientCount() int {
 	return len(m.clients)
 }
 
+func (m *Manager) Close(ctx context.Context) error {
+	m.logger.Info("Closing WebSocket manager")
+
+	m.mutex.Lock()
+	for _, client := range m.clients {
+		client.Connection.WriteMessage(websocket.CloseMessage,
+			websocket.FormatCloseMessage(websocket.CloseNormalClosure, "Server shutting down"))
+		close(client.Send)
+	}
+	m.clients = make(map[string]*Client)
+	m.mutex.Unlock()
+
+	close(m.messageBuffer)
+
+	m.logger.Info("WebSocket manager closed")
+	return nil
+}
+
 func (c *Client) readPump() {
 	defer func() {
 		c.Manager.removeClient(c)

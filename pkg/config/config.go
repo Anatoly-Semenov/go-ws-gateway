@@ -15,9 +15,10 @@ type Config struct {
 }
 
 type ServerConfig struct {
-	Port         int           `mapstructure:"port"`
-	ReadTimeout  time.Duration `mapstructure:"readTimeout"`
-	WriteTimeout time.Duration `mapstructure:"writeTimeout"`
+	Port            int           `mapstructure:"port"`
+	ReadTimeout     time.Duration `mapstructure:"readTimeout"`
+	WriteTimeout    time.Duration `mapstructure:"writeTimeout"`
+	ShutdownTimeout time.Duration `mapstructure:"shutdownTimeout"`
 }
 
 type KafkaConfig struct {
@@ -66,6 +67,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("server.port", 8080)
 	v.SetDefault("server.readTimeout", 10*time.Second)
 	v.SetDefault("server.writeTimeout", 10*time.Second)
+	v.SetDefault("server.shutdownTimeout", 30*time.Second)
 
 	v.SetDefault("kafka.bootstrapServers", "localhost:9092")
 	v.SetDefault("kafka.groupId", "ws-gateway")

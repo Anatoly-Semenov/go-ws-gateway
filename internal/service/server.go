@@ -72,15 +72,43 @@ func (s *Server) waitForShutdown() error {
 	<-sigChan
 	s.logger.Info("Received shutdown signal")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	shutdownTimeout := 30 * time.Second
+	if s.cfg.ShutdownTimeout > 0 {
+		shutdownTimeout = s.cfg.ShutdownTimeout
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
 
+	s.logger.Info("Shutting down services", zap.Duration("timeout", shutdownTimeout))
+
 	s.messageService.Stop()
+
+	if err := s.wsHandler.CloseConnections(ctx); err != nil {
+		s.logger.Error("Error closing WebSocket connections", zap.Error(err))
+	}
 
 	if err := s.server.Shutdown(ctx); err != nil {
 		return fmt.Errorf("failed to shutdown server: %w", err)
 	}
 
 	s.logger.Info("Server stopped gracefully")
+	return nil
+}
+
+func (s *Server) Shutdown(ctx context.Context) error {
+	s.logger.Info("Performing controlled shutdown")
+
+	s.messageService.Stop()
+
+	if err := s.wsHandler.CloseConnections(ctx); err != nil {
+		s.logger.Error("Error closing WebSocket connections", zap.Error(err))
+	}
+
+	if err := s.server.Shutdown(ctx); err != nil {
+		return fmt.Errorf("failed to shutdown server: %w", err)
+	}
+
+	s.logger.Info("Server shutdown completed")
 	return nil
 }

@@ -87,9 +87,28 @@ func (c *Consumer) Stop() {
 	c.isRunning = false
 	c.mutex.Unlock()
 
+	c.logger.Info("Stopping Kafka consumer")
+
 	c.cancel()
-	c.wg.Wait()
-	c.consumer.Close()
+
+	done := make(chan struct{})
+	go func() {
+		c.wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		c.logger.Info("All Kafka consumer routines stopped")
+	case <-time.After(10 * time.Second):
+		c.logger.Warn("Timeout waiting for Kafka consumer routines to stop")
+	}
+
+	if err := c.consumer.Close(); err != nil {
+		c.logger.Error("Error closing Kafka consumer", zap.Error(err))
+	}
+
+	c.logger.Info("Kafka consumer stopped")
 }
 
 func (c *Consumer) consumeMessages() {
