@@ -11,6 +11,7 @@ import (
 
 	"github.com/anatoly-dev/go-ws-gateway/pkg/config"
 	"github.com/anatoly-dev/go-ws-gateway/pkg/handlers"
+	"github.com/anatoly-dev/go-ws-gateway/pkg/metrics"
 	"go.uber.org/zap"
 )
 
@@ -18,9 +19,11 @@ type Server struct {
 	server         *http.Server
 	wsHandler      *handlers.WebSocketHandler
 	healthHandler  *handlers.HealthCheckHandler
+	metricsHandler *metrics.MetricsHandler
 	messageService *MessageService
 	logger         *zap.Logger
 	cfg            *config.ServerConfig
+	metricsCfg     *config.MetricsConfig
 }
 
 func NewServer(
@@ -29,20 +32,29 @@ func NewServer(
 	messageService *MessageService,
 	logger *zap.Logger,
 	cfg *config.ServerConfig,
+	metricsHandler *metrics.MetricsHandler,
+	metricsCfg *config.MetricsConfig,
 ) *Server {
 	return &Server{
 		wsHandler:      wsHandler,
 		healthHandler:  healthHandler,
 		messageService: messageService,
+		metricsHandler: metricsHandler,
 		logger:         logger,
 		cfg:            cfg,
+		metricsCfg:     metricsCfg,
 	}
 }
 
 func (s *Server) Start() error {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/ws", s.wsHandler.HandleConnection)
-	mux.HandleFunc("/health", s.healthHandler.HandleHealthCheck)
+	mux.HandleFunc("/ws", s.logMiddleware(s.wsHandler.HandleConnection))
+	mux.HandleFunc("/health", s.logMiddleware(s.healthHandler.HandleHealthCheck))
+
+	if s.metricsCfg != nil && s.metricsCfg.Enabled && s.metricsHandler != nil {
+		s.logger.Info("Enabling metrics endpoint", zap.String("path", s.metricsCfg.Path))
+		mux.Handle(s.metricsCfg.Path, s.metricsHandler.Handler())
+	}
 
 	s.server = &http.Server{
 		Addr:         fmt.Sprintf(":%d", s.cfg.Port),
@@ -63,6 +75,44 @@ func (s *Server) Start() error {
 	}()
 
 	return s.waitForShutdown()
+}
+
+func (s *Server) logMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+
+		rw := newResponseWriter(w)
+
+		next(rw, r)
+
+		duration := time.Since(start)
+		s.logger.Info("HTTP request",
+			zap.String("method", r.Method),
+			zap.String("path", r.URL.Path),
+			zap.Int("status", rw.status),
+			zap.Duration("duration", duration))
+
+		if s.metricsHandler != nil && s.metricsCfg != nil && s.metricsCfg.Enabled {
+			s.metricsHandler.RecordHTTPRequest(r.Method, r.URL.Path, rw.status, duration)
+		}
+	}
+}
+
+type responseWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func newResponseWriter(w http.ResponseWriter) *responseWriter {
+	return &responseWriter{
+		ResponseWriter: w,
+		status:         http.StatusOK,
+	}
+}
+
+func (rw *responseWriter) WriteHeader(status int) {
+	rw.status = status
+	rw.ResponseWriter.WriteHeader(status)
 }
 
 func (s *Server) waitForShutdown() error {

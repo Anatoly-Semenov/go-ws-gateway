@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/anatoly-dev/go-ws-gateway/pkg/metrics"
 	"github.com/anatoly-dev/go-ws-gateway/pkg/models"
 	"github.com/anatoly-dev/go-ws-gateway/pkg/redis"
 	"github.com/google/uuid"
@@ -22,6 +23,7 @@ type Manager struct {
 	instanceID    string
 	upgrader      websocket.Upgrader
 	messageBuffer chan *MessageEnvelope
+	metrics       *metrics.WebSocketMetrics
 }
 
 type MessageEnvelope struct {
@@ -61,10 +63,19 @@ func NewManager(redisManager *redis.ConnectionManager, logger *zap.Logger, insta
 	return manager
 }
 
+func (m *Manager) SetMetrics(metrics *metrics.WebSocketMetrics) {
+	m.metrics = metrics
+}
+
 func (m *Manager) HandleConnection(w http.ResponseWriter, r *http.Request, userID string) {
 	conn, err := m.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		m.logger.Error("Failed to upgrade to WebSocket", zap.Error(err))
+
+		if m.metrics != nil {
+			m.metrics.AuthenticationErrorCount.Inc()
+		}
+
 		return
 	}
 
@@ -81,6 +92,12 @@ func (m *Manager) HandleConnection(w http.ResponseWriter, r *http.Request, userI
 
 	m.mutex.Lock()
 	m.clients[clientID] = client
+
+	if m.metrics != nil {
+		m.metrics.ActiveConnections.Set(float64(len(m.clients)))
+		m.metrics.ConnectionsTotal.Inc()
+	}
+
 	m.mutex.Unlock()
 
 	redisClient := models.NewClient(clientID, userID)
@@ -97,9 +114,23 @@ func (m *Manager) HandleConnection(w http.ResponseWriter, r *http.Request, userI
 }
 
 func (m *Manager) SendToUser(userID string, message *models.Message) {
+	startTime := time.Now()
+
 	m.messageBuffer <- &MessageEnvelope{
 		UserID:  userID,
 		Message: message,
+	}
+
+	if m.metrics != nil {
+		m.metrics.MessageBufferSize.Set(float64(len(m.messageBuffer)))
+
+		if len(m.messageBuffer) > cap(m.messageBuffer)*90/100 {
+			m.metrics.MessageBufferOverflow.Inc()
+		}
+
+		m.metrics.MessagesSent.WithLabelValues(string(message.Type)).Inc()
+
+		m.metrics.MessageLatency.Observe(time.Since(startTime).Seconds())
 	}
 }
 
@@ -145,6 +176,14 @@ func (m *Manager) deliverToLocalClients(userID string, message *models.Message) 
 func (m *Manager) removeClient(client *Client) {
 	m.mutex.Lock()
 	delete(m.clients, client.ID)
+
+	if m.metrics != nil {
+		m.metrics.ActiveConnections.Set(float64(len(m.clients)))
+
+		connectionDuration := time.Since(client.Connected).Seconds()
+		m.metrics.ConnectionDuration.Observe(connectionDuration)
+	}
+
 	m.mutex.Unlock()
 
 	ctx := context.Background()
@@ -218,6 +257,10 @@ func (c *Client) readPump() {
 				c.Manager.logger.Info("WebSocket closed unexpectedly",
 					zap.Error(err),
 					zap.String("clientID", c.ID))
+
+				if c.Manager.metrics != nil {
+					c.Manager.metrics.UnexpectedCloseCount.Inc()
+				}
 			}
 			break
 		}
@@ -225,6 +268,11 @@ func (c *Client) readPump() {
 		c.Manager.logger.Debug("Received message from client",
 			zap.String("clientID", c.ID),
 			zap.ByteString("message", message))
+
+		if c.Manager.metrics != nil {
+			c.Manager.metrics.BytesReceived.Add(float64(len(message)))
+			c.Manager.metrics.MessagesReceived.WithLabelValues("client_message").Inc()
+		}
 	}
 }
 
@@ -248,17 +296,27 @@ func (c *Client) writePump() {
 			if err != nil {
 				return
 			}
+
 			w.Write(message)
-			
+
+			if c.Manager.metrics != nil {
+				c.Manager.metrics.BytesSent.Add(float64(len(message)))
+			}
+
 			n := len(c.Send)
 			for i := 0; i < n; i++ {
-				w.Write([]byte("\n"))
-				w.Write(<-c.Send)
+				additionalMsg := <-c.Send
+				w.Write(additionalMsg)
+
+				if c.Manager.metrics != nil {
+					c.Manager.metrics.BytesSent.Add(float64(len(additionalMsg)))
+				}
 			}
 
 			if err := w.Close(); err != nil {
 				return
 			}
+
 		case <-ticker.C:
 			c.Connection.SetWriteDeadline(time.Now().Add(10 * time.Second))
 			if err := c.Connection.WriteMessage(websocket.PingMessage, nil); err != nil {
