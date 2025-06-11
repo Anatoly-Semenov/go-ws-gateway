@@ -137,7 +137,6 @@ func NewServeCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "serve",
 		Short: "Start the WebSocket Gateway server",
-		Long:  "Start the WebSocket Gateway server that handles Kafka messages and sends them to clients via WebSockets",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			app := NewApplication(configPath)
 			if err := app.Init(); err != nil {

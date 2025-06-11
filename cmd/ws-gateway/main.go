@@ -12,7 +12,6 @@ func main() {
 	rootCmd := &cobra.Command{
 		Use:   "ws-gateway",
 		Short: "WebSocket Gateway service",
-		Long:  "A high-performance WebSocket Gateway service that handles Kafka messages and sends them to clients via WebSockets",
 	}
 
 	rootCmd.AddCommand(commands.NewServeCommand())
