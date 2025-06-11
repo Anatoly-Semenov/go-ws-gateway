@@ -1,0 +1,21 @@
+server:
+  port: 8080
+  readTimeout: 10s
+  writeTimeout: 10s
+
+kafka:
+  bootstrapServers: localhost:9092
+  groupId: ws-gateway
+  topics:
+    - balance-updates
+    - user-blocks
+    - notifications
+
+redis:
+  addr: localhost:6379
+  password: ""
+  db: 0
+
+logger:
+  level: info
+  format: json 

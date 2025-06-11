@@ -1,0 +1,82 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ws-gateway
+  labels:
+    app: ws-gateway
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: ws-gateway
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: ws-gateway
+    spec:
+      containers:
+      - name: ws-gateway
+        image: ws-gateway:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8080
+          name: http
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        env:
+        - name: LOG_LEVEL
+          value: "info"
+        volumeMounts:
+        - name: config-volume
+          mountPath: /app/config.yaml
+          subPath: config.yaml
+      volumes:
+      - name: config-volume
+        configMap:
+          name: ws-gateway-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ws-gateway-service
+spec:
+  selector:
+    app: ws-gateway
+  ports:
+  - port: 80
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  type: ClusterIP
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ws-gateway-config
+data:
+  config.yaml: |
+    # Здесь должно быть содержимое вашего config.yaml
+    # По умолчанию используются значения из файла конфигурации
+    # в корне проекта 
