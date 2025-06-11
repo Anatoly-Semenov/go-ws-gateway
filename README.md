@@ -21,6 +21,10 @@ A service for processing WebSocket connections
 
 ---
 
+![architecture.png](architecture.png)
+
+---
+
 ## Project Description
 
 Go WebSocket Gateway is a service that provides a WebSocket interface for clients and processes messages through Kafka. The service is designed to ensure real-time two-way communication between clients and the backend system.
