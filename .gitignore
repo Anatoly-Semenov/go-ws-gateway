@@ -7,7 +7,7 @@
 *.dll
 *.so
 *.dylib
-./ws-gateway
+build
 
 # Test binary, built with `go test -c`
 *.test
