@@ -15,6 +15,8 @@ A service for processing WebSocket connections
 - [API and WebSocket](#api-and-websocket)
   - [WebSocket Connection](#websocket-connection)
   - [Connection Parameters](#connection-parameters)
+- [Metrics](#metrics)
+  - [Prometheus Integration](#prometheus-integration)
 - [License](#license)
 
 ---
@@ -41,6 +43,7 @@ go-ws-gateway/
 │   ├── config/            # Application configuration
 │   ├── handlers/          # HTTP and WebSocket handlers
 │   ├── kafka/             # Kafka integration
+│   ├── metrics/           # Prometheus metrics
 │   ├── models/            # Data models
 │   ├── redis/             # Redis integration
 │   └── websocket/         # WebSocket connection management
@@ -123,6 +126,11 @@ redis:
 logger:
   level: info
   format: json
+
+metrics:
+  enabled: true
+  namespace: ws_gateway
+  path: /metrics
 ```
 
 ---
@@ -145,6 +153,33 @@ ws://hostname:8080/ws
 URL example:
 ```
 ws://localhost:8080/ws?token=your-jwt-token&topics=balance-updates,notifications
+```
+
+---
+
+## Metrics
+
+The service provides a wide range of Prometheus metrics to monitor all aspects of its work.
+
+A complete list of all available metrics with descriptions is located in [pkg/metrics/README.md](pkg/metrics/README.md).
+
+### Prometheus Integration
+
+Metrics are exposed on the `/metrics` endpoint (configurable in `config.yaml`). You can scrape this endpoint with Prometheus server.
+
+Example Prometheus configuration:
+
+```yaml
+scrape_configs:
+  - job_name: 'ws-gateway'
+    scrape_interval: 10s
+    static_configs:
+      - targets: ['ws-gateway:8080']
+```
+
+Example Grafana dashboard query for active WebSocket connections:
+```
+sum(ws_gateway_websocket_active_connections)
 ```
 
 ---
