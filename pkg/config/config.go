@@ -8,10 +8,11 @@ import (
 )
 
 type Config struct {
-	Server ServerConfig `mapstructure:"server"`
-	Kafka  KafkaConfig  `mapstructure:"kafka"`
-	Redis  RedisConfig  `mapstructure:"redis"`
-	Logger LoggerConfig `mapstructure:"logger"`
+	Server  ServerConfig  `mapstructure:"server"`
+	Kafka   KafkaConfig   `mapstructure:"kafka"`
+	Redis   RedisConfig   `mapstructure:"redis"`
+	Logger  LoggerConfig  `mapstructure:"logger"`
+	Metrics MetricsConfig `mapstructure:"metrics"`
 }
 
 type ServerConfig struct {
@@ -36,6 +37,12 @@ type RedisConfig struct {
 type LoggerConfig struct {
 	Level  string `mapstructure:"level"`
 	Format string `mapstructure:"format"`
+}
+
+type MetricsConfig struct {
+	Enabled   bool   `mapstructure:"enabled"`
+	Namespace string `mapstructure:"namespace"`
+	Path      string `mapstructure:"path"`
 }
 
 func LoadConfig(path string) (*Config, error) {
@@ -79,4 +86,8 @@ func setDefaults(v *viper.Viper) {
 
 	v.SetDefault("logger.level", "info")
 	v.SetDefault("logger.format", "json")
+
+	v.SetDefault("metrics.enabled", true)
+	v.SetDefault("metrics.namespace", "ws_gateway")
+	v.SetDefault("metrics.path", "/metrics")
 }
