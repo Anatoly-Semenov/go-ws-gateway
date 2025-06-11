@@ -19,3 +19,8 @@ redis:
 logger:
   level: info
   format: json 
+
+metrics:
+  enabled: true
+  namespace: ws_gateway
+  path: /metrics 

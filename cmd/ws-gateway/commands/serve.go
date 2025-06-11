@@ -9,6 +9,7 @@ import (
 	"github.com/anatoly-dev/go-ws-gateway/pkg/config"
 	"github.com/anatoly-dev/go-ws-gateway/pkg/handlers"
 	"github.com/anatoly-dev/go-ws-gateway/pkg/kafka"
+	"github.com/anatoly-dev/go-ws-gateway/pkg/metrics"
 	"github.com/anatoly-dev/go-ws-gateway/pkg/redis"
 	"github.com/anatoly-dev/go-ws-gateway/pkg/websocket"
 	"github.com/google/uuid"
@@ -27,6 +28,8 @@ type Application struct {
 	messageService *service.MessageService
 	wsHandler      *handlers.WebSocketHandler
 	healthHandler  *handlers.HealthCheckHandler
+	metrics        *metrics.Metrics
+	metricsHandler *metrics.MetricsHandler
 	server         *service.Server
 }
 
@@ -49,6 +52,8 @@ func (a *Application) Init() error {
 	a.logger.Info("Starting WebSocket Gateway",
 		zap.String("instanceID", a.instanceID),
 		zap.String("version", "1.0.0"))
+
+	a.initMetrics()
 
 	if err := a.initRedis(); err != nil {
 		return err
@@ -85,6 +90,20 @@ func (a *Application) initLogger() error {
 	return nil
 }
 
+func (a *Application) initMetrics() {
+	if !a.cfg.Metrics.Enabled {
+		a.logger.Info("Metrics collection is disabled")
+		return
+	}
+
+	a.logger.Info("Initializing metrics",
+		zap.String("namespace", a.cfg.Metrics.Namespace),
+		zap.String("path", a.cfg.Metrics.Path))
+
+	a.metrics = metrics.NewMetrics(a.cfg.Metrics.Namespace)
+	a.metricsHandler = metrics.NewMetricsHandler(a.metrics, a.logger)
+}
+
 func (a *Application) initRedis() error {
 	redisManager, err := redis.NewConnectionManager(&a.cfg.Redis, a.logger, a.instanceID)
 	if err != nil {
@@ -96,6 +115,10 @@ func (a *Application) initRedis() error {
 
 func (a *Application) initWebsocket() {
 	a.wsManager = websocket.NewManager(a.redisManager, a.logger, a.instanceID)
+
+	if a.metrics != nil {
+		a.wsManager.SetMetrics(&a.metrics.WebSocket)
+	}
 }
 
 func (a *Application) initKafka() error {
@@ -104,11 +127,20 @@ func (a *Application) initKafka() error {
 		return fmt.Errorf("failed to create Kafka consumer: %w", err)
 	}
 	a.kafkaConsumer = kafkaConsumer
+
+	if a.metrics != nil {
+		a.kafkaConsumer.SetMetrics(&a.metrics.Kafka)
+	}
+
 	return nil
 }
 
 func (a *Application) initServices() {
 	a.messageService = service.NewMessageService(a.kafkaConsumer, a.wsManager, a.logger)
+
+	if a.metrics != nil {
+		a.messageService.SetMetrics(&a.metrics.Business)
+	}
 }
 
 func (a *Application) initHandlers() {
@@ -117,7 +149,15 @@ func (a *Application) initHandlers() {
 }
 
 func (a *Application) initServer() {
-	a.server = service.NewServer(a.wsHandler, a.healthHandler, a.messageService, a.logger, &a.cfg.Server)
+	a.server = service.NewServer(
+		a.wsHandler,
+		a.healthHandler,
+		a.messageService,
+		a.logger,
+		&a.cfg.Server,
+		a.metricsHandler,
+		&a.cfg.Metrics,
+	)
 }
 
 func (a *Application) Run() error {
